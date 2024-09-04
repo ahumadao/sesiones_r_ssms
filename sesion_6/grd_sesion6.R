@@ -11,7 +11,9 @@ pacman::p_load(
   lubridate,  # trabajar con fechas
   labelled,    # añadir 
   summarytools,
-  rio
+  rio,
+  skimr,
+  DataExplorer
 )
 
 
@@ -32,11 +34,54 @@ hospitales <- import(here('data','Tablas maestras bases GRD.xlsx'),which=1)
 #por ejemplo
 
 names(data) #nombres de las columnas
-a <- head(data)
-unique(data$SERVICIO_SALUD) #valores únicos en columnas
+a <- head(data) #mirar las primeras filas
+unique(data$COMUNA) #valores únicos en columnas
 skimr::skim(data) #reporte en consola
 DataExplorer::create_report(data) #reporte html
 
 # 2. Generar una pregunta de investigación de los datos.
+
+data_procesada <- data %>%
+  clean_names() %>%
+  filter(servicio_salud == 'METROPOLITANO SUR') %>%
+  mutate(
+    tiempo_hospitalizacion = interval(fecha_ingreso, fechaalta) / days(1),
+    prevision2 = ifelse(grepl("FONASA", prevision), "FONASA", prevision)  # Condición para prevision2
+  ) %>%
+  group_by(cod_hospital, tipo_ingreso) %>%
+  summarise(
+    n = n(),
+    promedio = mean(tiempo_hospitalizacion, na.rm = TRUE)  # Incluyendo na.rm = TRUE para evitar errores con valores NA
+  ) %>%
+  left_join(hospitales, by = c('cod_hospital'='HOSPITALES')) %>%
+  rename('hospital' = '...2') %>% 
+  select('hospital', 'tipo_ingreso', 'n','promedio') %>%
+  filter(n > 20)
+
+
+diagnosticos <- data %>%
+  clean_names() %>%
+  filter(servicio_salud == 'METROPOLITANO SUR') %>%
+  mutate(
+    tiempo_hospitalizacion = interval(fecha_ingreso, fechaalta) / days(1),
+  ) %>%
+  group_by(cod_hospital, tipo_ingreso, diagnostico1) %>%
+  summarise(
+    n = n(),
+    promedio = mean(tiempo_hospitalizacion, na.rm = TRUE)  # Incluyendo na.rm = TRUE para evitar errores con valores NA
+  ) %>%
+  ungroup() %>%
+  left_join(hospitales, by = c('cod_hospital'='HOSPITALES')) %>%
+  rename('hospital' = '...2') %>% 
+  select('hospital', 'diagnostico1', 'n','promedio') %>%
+  filter(n > 20) %>% 
+  arrange(desc(promedio)) %>%
+  slice(1:10) %>%
+  left_join(cie10 %>%
+              select(Código,Descripción)
+            , by=c('diagnostico1'='Código'))
+
+
+
 # 3. Obtener información de los datos.
 # 4. Generar gráficos informativos. 
